@@ -1,0 +1,6 @@
+[submodule "lib/Path-Tiny"]
+	path = lib/Path-Tiny
+	url = https://github.com/dagolden/Path-Tiny.git
+[submodule "lib/JSON-MaybeXS"]
+	path = lib/JSON-MaybeXS
+	url = https://github.com/p5sagit/JSON-MaybeXS.git
