@@ -1,0 +1,94 @@
+#!/usr/bin/env perl
+use utf8;
+use strict;
+use warnings;
+
+use JSON;
+use Getopt::Long;
+use File::Path qw(make_path remove_tree);
+use File::Spec;
+use File::Copy;
+use File::Find;
+
+# ----------------------------------------------------------------------
+# | Initialization		                                               |
+# ----------------------------------------------------------------------
+my $dirname   = "dist";
+my $cgi  = "true";
+
+GetOptions ("dist=s" => \$dirname,   
+              "cgi=s"   => \$cgi );   # flag
+
+my @dir = ( $dirname);
+push @dir, "cgi-bin" if ( $cgi eq 'true' );
+
+my $dist = File::Spec->catdir( @dir );
+
+# ----------------------------------------------------------------------
+# | Main				                                               |
+# ----------------------------------------------------------------------
+ 
+ print "GETTING->".get();
+
+ if ( -d $dist )
+ {
+ 	remove_tree( $dist );
+ }
+
+make_path( $dist );
+
+copy();
+
+# ----------------------------------------------------------------------
+# | Actions 			                                               |
+# ----------------------------------------------------------------------
+sub clear
+{ 
+	remove_tree( $_[0] ) if ( -d $_[0]  );
+	make_path( $_[0]  );
+}
+
+sub copy
+{
+	if ( -f $_[0] )
+	{
+		return copy( $_[0], $_[1] );
+	}
+
+	find sub { 
+		return unless -d;
+		my $file = "$File::Find::name";
+
+  		print "$File::Find::name\n";
+	}, $_[0] ;
+}
+
+# ----------------------------------------------------------------------
+# | Helpers 			                                               |
+# ----------------------------------------------------------------------
+
+sub get
+{
+	my $content = do { local( @ARGV, $/ ) = 'build.json'; <> };
+	my $json = JSON::decode_json ( $content );
+
+	while ($content =~ /(\{\{\s*(.*?)\s*\}\})/g) {
+		my $replacement = value($json, $2);
+		$content =~ s/$1/$replacement/g;
+    }
+
+    return $content;
+}
+
+sub value
+{
+	my ( $dataset, $index ) = @_;
+	my @frags = split /\./, $index;
+	my $response = $dataset;
+
+	foreach my $key ( @frags )
+	{
+		$response = $response->{$key} if ( $response->{$key} );
+	}
+	return $response;
+}

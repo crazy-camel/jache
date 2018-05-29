@@ -1,0 +1,11 @@
+{
+	"meta" : { 
+		"name" : "jache",
+		"version" : "1.0",
+		"dist": { "folder" : "dist" }
+	},
+	"build": [
+		{ "action": "clear", "path" : "{{ meta.dist.folder }}"}
+	]
+
+}
