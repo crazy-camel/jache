@@ -2,10 +2,15 @@
 	"meta" : { 
 		"name" : "jache",
 		"version" : "1.0",
-		"dist": { "folder" : "dist" }
+		"dist": { "folder" : "dist" },
+		"src" : { "folder" : "src" }
 	},
 	"build": [
-		{ "action": "clear", "path" : "{{ meta.dist.folder }}"}
+		{ "action": "clear", "path" : "{{ meta.dist.folder }}"},
+		{ "action": "make", "path" : "{{ meta.dist.folder }}"},
+		{ "action": "merge", "type": "cgi" ,"dest": "{{ meta.dist.folder }}/.htaccess", "src": [
+			"{{ meta.src.folder }}/htaccess/errors.rule",
+			"{{ meta.src.folder }}/htaccess/rewrite.rule"
+		]}
 	]
-
 }

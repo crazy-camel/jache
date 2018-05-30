@@ -9,6 +9,7 @@ use File::Path qw(make_path remove_tree);
 use File::Spec;
 use File::Copy;
 use File::Find;
+use feature ":5.18";
 
 # ----------------------------------------------------------------------
 # | Initialization		                                               |
@@ -16,10 +17,14 @@ use File::Find;
 my $dirname   = "dist";
 my $cgi  = "true";
 
+my $build = get();
+
+
 GetOptions ("dist=s" => \$dirname,   
               "cgi=s"   => \$cgi );   # flag
 
 my @dir = ( $dirname);
+
 push @dir, "cgi-bin" if ( $cgi eq 'true' );
 
 my $dist = File::Spec->catdir( @dir );
@@ -28,27 +33,35 @@ my $dist = File::Spec->catdir( @dir );
 # | Main				                                               |
 # ----------------------------------------------------------------------
  
- print "GETTING->".get();
-
- if ( -d $dist )
+ foreach my $action ( @{ $build->{'build'} } )
  {
- 	remove_tree( $dist );
+ 	print "trying :: ". $action->{'action'} . "\n";
+ 	given ( $action->{'action'} )
+ 	{
+ 		when ( 'clear' ) { clear( $action->{'path'} ) }
+ 		when ( 'make' ) { make( $action->{'path'} ) }
+ 		when ( 'merge' ) { print "merging now"};
+ 	}
+
  }
 
-make_path( $dist );
-
-copy();
 
 # ----------------------------------------------------------------------
 # | Actions 			                                               |
 # ----------------------------------------------------------------------
 sub clear
 { 
+	print "\t[clear] clearning directory and children for $_[0]\n";
 	remove_tree( $_[0] ) if ( -d $_[0]  );
+}
+
+sub make
+{
+	print "\t[make] making the new directory $_[0]\n";
 	make_path( $_[0]  );
 }
 
-sub copy
+sub rcopy
 {
 	if ( -f $_[0] )
 	{
@@ -58,7 +71,7 @@ sub copy
 	find sub { 
 		return unless -d;
 		my $file = "$File::Find::name";
-
+		
   		print "$File::Find::name\n";
 	}, $_[0] ;
 }
@@ -77,7 +90,7 @@ sub get
 		$content =~ s/$1/$replacement/g;
     }
 
-    return $content;
+    return JSON::decode_json( $content );
 }
 
 sub value
