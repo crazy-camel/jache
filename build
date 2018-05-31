@@ -1,107 +1,256 @@
 #!/usr/bin/env perl
+
+use 5.010;
 use utf8;
 use strict;
 use warnings;
+no warnings 'experimental::smartmatch';
 
 use JSON;
 use Getopt::Long;
-use File::Path qw(make_path remove_tree);
+
 use File::Spec;
+use File::Basename;
+use File::Path qw(make_path remove_tree);
 use File::Copy;
 use File::Find;
-use feature ":5.18";
 
-# ----------------------------------------------------------------------
-# | Initialization		                                               |
-# ----------------------------------------------------------------------
-my $dirname   = "dist";
-my $cgi  = "true";
+use Data::Dump 'dump';
 
-my $build = get();
+# ######################################################################
+# # Initialization
+# ######################################################################
+my $dirname = "dist";
+my $type    = "cgi-bin";
 
+GetOptions(
+    "dist=s" => \$dirname,
+    "type=s" => \$type
+);    # flag
 
-GetOptions ("dist=s" => \$dirname,   
-              "cgi=s"   => \$cgi );   # flag
+my $config = config(
+    type => $type,
+    dist => $dirname
+);
 
-my @dir = ( $dirname);
+my @dir = ( $dirname );
 
-push @dir, "cgi-bin" if ( $cgi eq 'true' );
+push @dir, $config->{ 'meta' }->{ 'dist' } if ( $config->{ 'meta' }->{ 'dist' } ne 'docroot' );
 
 my $dist = File::Spec->catdir( @dir );
 
-# ----------------------------------------------------------------------
-# | Main				                                               |
-# ----------------------------------------------------------------------
- 
- foreach my $action ( @{ $build->{'build'} } )
- {
- 	print "trying :: ". $action->{'action'} . "\n";
- 	given ( $action->{'action'} )
- 	{
- 		when ( 'clear' ) { clear( $action->{'path'} ) }
- 		when ( 'make' ) { make( $action->{'path'} ) }
- 		when ( 'merge' ) { print "merging now"};
- 	}
+# ######################################################################
+# # Main
+# ######################################################################
+foreach my $action ( @{ $config->{ 'build' } } )
+{
+    given ( $action->{ 'action' } )
+    {
+        when ( 'clear' )  { clear( $action->{ 'path' } ) }
+        when ( 'make' )   { make( $action->{ 'path' } ) }
+        when ( 'clone' )  { clone( $action->{ 'src' }, $action->{ 'path' } ) }
+        when ( 'concat' ) { concat( $action->{ 'src' }, $action->{ 'path' } ) }
+    }
 
- }
-
-
-# ----------------------------------------------------------------------
-# | Actions 			                                               |
-# ----------------------------------------------------------------------
-sub clear
-{ 
-	print "\t[clear] clearning directory and children for $_[0]\n";
-	remove_tree( $_[0] ) if ( -d $_[0]  );
 }
 
+# ######################################################################
+# # Actions
+# ######################################################################
+# ======================================================================
+# (@function) clear -clears a directory
+# ----
+# (@p) <string> - directory required to clear
+# ----
+# (@r) void
+# ======================================================================
+sub clear
+{
+    print "\t[clear] clearning directory and children for $_[0]\n";
+    remove_tree( $_[ 0 ] ) if ( -d $_[ 0 ] );
+}
+
+# ======================================================================
+# (@function) make - creates a new directory (deep safe - "directory/subdirectory" will work)
+# ----
+# (@p) <string> - path to create
+# ----
+# (@r) void
+# ======================================================================
 sub make
 {
-	print "\t[make] making the new directory $_[0]\n";
-	make_path( $_[0]  );
+    print "\t[make] making the new directory $_[0]\n";
+    make_path( $_[ 0 ] );
 }
 
-sub rcopy
+# ======================================================================
+# (@function) copy - copies file and/or directories to another location
+# ----
+# (@p) <string> - file or directory
+# ----
+# (@r) void
+# ======================================================================
+sub clone
 {
-	if ( -f $_[0] )
-	{
-		return copy( $_[0], $_[1] );
-	}
+    my ( $from, $to ) = map { File::Spec->rel2abs( $_, File::Spec->rel2abs( '.' ) ) } @_;
 
-	find sub { 
-		return unless -d;
-		my $file = "$File::Find::name";
-		
-  		print "$File::Find::name\n";
-	}, $_[0] ;
+    if ( -f $from )
+    {
+        return file_copy( $from, $to );
+    }
+
+    return directory_copy( $from, $to );
 }
 
-# ----------------------------------------------------------------------
-# | Helpers 			                                               |
-# ----------------------------------------------------------------------
-
-sub get
+sub file_copy
 {
-	my $content = do { local( @ARGV, $/ ) = 'build.json'; <> };
-	my $json = JSON::decode_json ( $content );
+    my ( $from, $to ) = @_;
 
-	while ($content =~ /(\{\{\s*(.*?)\s*\}\})/g) {
-		my $replacement = value($json, $2);
-		$content =~ s/$1/$replacement/g;
+    return copy( $from, $to );
+}
+
+sub directory_copy
+{
+
+    my ( $from, $to ) = @_;
+
+    find sub
+    {
+        return if -d;
+
+        my ( $file, $copy ) = ( "$File::Find::name", "$File::Find::name" );
+
+        $copy =~ s/$from/$to/;
+
+        my ( $dir ) = dirname( $copy );
+
+        if ( !-d $dir )
+        {
+            make_path( $dir );
+        }
+
+        copy( $file, $copy );
+
+    }, $from;
+
+}
+# ======================================================================
+# (@function) concat - concate a series of files into one file
+# ----
+# (@p) <array> - array of source files
+# (@p) <string> - filename to write the concated files
+# ---- 
+# (@r) void
+# ======================================================================
+sub concat
+{
+	my ( $src, @files ) = map { File::Spec->rel2abs( $_, File::Spec->rel2abs( '.' ) ) } @_;
+
+	# step 1, lets make sure we can write to the path
+	 my ( $dir ) = dirname( $src );
+
+	 if ( !-d $dir )
+     {
+        make_path( $dir );
+     }
+
+     # now lets loop through the src files and concate the output
+     my $content = "";
+
+     $content .= slurp($_) for (@files);
+
+     # now write the file
+     spew( $src, $content );
+}
+
+# ######################################################################
+# # Helpers
+# ######################################################################
+# ======================================================================
+# (@function) config - loads the 'build.json' file
+# ----
+# (@p) <hash_key_value> - additional key => value parameters to overload
+# 						  the config file with
+# ----
+# (@r) <hash> - properties for the build
+# ======================================================================
+sub config
+{
+    my $content = slurp( 'build.json' );
+
+    # lets get the parameters to preparse the build info
+    my $params = JSON::decode_json( $content );
+
+    # see if we have runtime parameters
+    if ( @_ )
+    {
+        my $runtime = { runtime => { @_ } };
+        $params = { %$params, %$runtime };
+    }
+
+    while ( $content =~ /(\{\{\s*(.*?)\s*\}\})/g )
+    {
+        my $replacement = lookup( $params, $2 );
+        $content =~ s/$1/$replacement/g;
     }
 
     return JSON::decode_json( $content );
 }
 
-sub value
+# ======================================================================
+# (@function) slurp - read the file contents and returns then as a scalar
+# ----
+# (@p) <string> - filename
+# ----
+# (@r) <string> - contents of file
+# ======================================================================
+sub slurp
 {
-	my ( $dataset, $index ) = @_;
-	my @frags = split /\./, $index;
-	my $response = $dataset;
+    my ( $file ) = ( @_ );
+    if ( not -f $file )
+    {
+        return;
+    }
+    return do { local ( @ARGV, $/ ) = $file; <> };
+}
 
-	foreach my $key ( @frags )
-	{
-		$response = $response->{$key} if ( $response->{$key} );
-	}
-	return $response;
+# ======================================================================
+# (@function) spew - write contents to a file
+# ----
+# (@p) <string> - absolute file path
+# (@p) <array> - files to slurp
+# ---- 
+# (@r)
+# ======================================================================
+sub spew
+{
+	my ( $src, $content ) = @_;
+
+	open(my $fh, '>:encoding(UTF-8)', $src) 
+			or die "Could not open file '$src' $!";
+
+	print $fh $content;
+	undef $fh;
+
+}
+# ======================================================================
+# (@function) lookup - looks up values in a hash using dot-notation
+# ----
+# (@p) <hash> - the hash to lookup against
+# (@p) <string> - the key to inspect against
+# ----
+# (@r) <string> - value of dot-notation lookup
+# ======================================================================
+sub lookup
+{
+    my ( $dataset, $index ) = @_;
+
+    my $response = $dataset;
+
+    foreach my $key ( split /\./, $index )
+    {
+        $response = $response->{ $key } if ( $response->{ $key } );
+    }
+
+    return $response;
 }
