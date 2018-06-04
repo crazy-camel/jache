@@ -1,0 +1,6 @@
+#
+
+sub gogo
+{
+	print "gogo";
+}
